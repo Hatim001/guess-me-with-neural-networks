@@ -52,12 +52,22 @@ class DualModeNeuralNetwork:
                 "activation": self.softmax,
                 "derivative": self.softmax_derivative,
             },
+            "leaky_relu": {
+                "activation": self.leaky_relu,
+                "derivative": self.leaky_relu_derivative,
+            },
         }
 
         self.activation_function = function_mapper[activation_func]["activation"]
         self.activation_function_derivative = function_mapper[activation_func][
             "derivative"
         ]
+
+    def leaky_relu(self, x, alpha=0.01):
+        return np.where(x > 0, x, x * alpha)
+
+    def leaky_relu_derivative(self, x, alpha=0.01):
+        return np.where(x > 0, 1, alpha)
 
     def softmax(self, x):
         e_x = np.exp(x - np.max(x))

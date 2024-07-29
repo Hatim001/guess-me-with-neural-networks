@@ -4,9 +4,42 @@ from game import Q20Game
 from zoo import Zoo
 from neural import DualModeNeuralNetwork
 
+model_mapper = {
+    8: {
+        "learning_rate": 0.1,
+        "hidden_size": 128,
+        "activation_func": "relu",
+        "question_limit": 8,
+        "model_filename": "saved/zoo_8.json",
+    },
+    10: {
+        "learning_rate": 0.1,
+        "hidden_size": 128,
+        "activation_func": "leaky_relu",
+        "question_limit": 10,
+        "model_filename": "saved/zoo_10.json",
+    },
+    15: {
+        "learning_rate": 0.1,
+        "hidden_size": 128,
+        "activation_func": "leaky_relu",
+        "question_limit": 15,
+        "model_filename": "saved/zoo_15.json",
+    },
+    20: {
+        "learning_rate": 0.1,
+        "hidden_size": 128,
+        "activation_func": "leaky_relu",
+        "question_limit": 20,
+        "model_filename": "saved/zoo_20.json",
+    },
+}
+
 
 # Function to load the data and initialize objects
-def initialize_game(question_limit):
+def initialize_game(
+    learning_rate, hidden_size, activation_func, question_limit, model_filename
+):
     SRC = "data/zoo.csv"
     zoo_data = Zoo(SRC)
     questions = zoo_data.questions
@@ -16,16 +49,16 @@ def initialize_game(question_limit):
 
     neural_network = DualModeNeuralNetwork(
         num_questions=input_size,
-        num_hidden1=64,
-        num_hidden2=64,
+        num_hidden1=hidden_size,
+        num_hidden2=hidden_size,
         num_targets=output_size,
-        learning_rate=0.1,
-        activation_func="relu",
+        learning_rate=learning_rate,
+        activation_func=activation_func,
     )
 
     # Load pre-trained neural network model if available
     try:
-        neural_network.load("saved/zoo.json")
+        neural_network.load(model_filename)
     except FileNotFoundError:
         pass
 
@@ -57,7 +90,7 @@ def show_intro():
     )
 
     if "targets" not in st.session_state:
-        _, _, _, targets, _ = initialize_game(10)
+        _, _, _, targets, _ = initialize_game(**model_mapper[10])
         st.session_state.targets = targets
 
     st.write("### Animals to choose from:")
@@ -65,9 +98,18 @@ def show_intro():
 
     question_limit = st.selectbox(
         "Select the number of questions:",
-        options=[8, 10, 15, 20],
-        index=0,  # Default to 10 questions
+        options=[
+            "8 (Accuracy: 80.5%)",
+            "10 (Accuracy: 94.5%)",
+            "15 (Accuracy: 100%)",
+            "20 (Accuracy: 100%)",
+        ],
+        index=1,  # Default to 10 questions
     )
+
+    question_limit = int(question_limit.split()[0])
+
+    print("Question Limit", question_limit, type(question_limit))
 
     if st.button("Start Game"):
         (
@@ -76,7 +118,7 @@ def show_intro():
             st.session_state.questions,
             st.session_state.targets,
             st.session_state.question_limit,
-        ) = initialize_game(question_limit)
+        ) = initialize_game(**model_mapper[question_limit])
         st.session_state.question_index = 0
         st.session_state.asked_questions = []
         st.session_state.input_vector = [0] * len(st.session_state.questions)
@@ -104,7 +146,7 @@ def play_game():
     targets = st.session_state.targets
 
     if not st.session_state.game_completed:
-        if st.session_state.question_index < st.session_state.question_limit:
+        if st.session_state.question_index < st.session_state.question_limit - 1:
             if st.session_state.current_question is None:
                 best_question_index = game_instance.smart_q(
                     st.session_state.output,
@@ -137,6 +179,17 @@ def play_game():
                     st.session_state.question_index += 1
                     st.session_state.current_question = None
                     st.rerun()
+
+                if (
+                    st.session_state.question_index >= 4
+                    and st.session_state.question_index
+                    < st.session_state.question_limit - 1
+                ):
+                    best_guess_index = np.argmax(st.session_state.output)
+                    st.write(
+                        f"Most probable answer: {targets[best_guess_index]} (Probability: {int(round(st.session_state.output[best_guess_index], 2) * 100)}%)"
+                    )
+
         else:
             best_guess_index = np.argmax(st.session_state.output)
             st.write(f"Is your animal a {targets[best_guess_index]}?")
@@ -159,7 +212,9 @@ def play_game():
             st.session_state.neural_network.backpropagate(
                 st.session_state.input_vector, target_vector
             )
-            st.session_state.neural_network.save("saved/zoo.json")
+            st.session_state.neural_network.save(
+                model_mapper[st.session_state.question_limit].get("model_filename")
+            )
             st.session_state.correct_animal_selected = False
             st.session_state.game_completed = True
             st.rerun()

@@ -1,10 +1,10 @@
 import sys
 import random
+import numpy as np
 from zoo import Zoo
 from game import Q20Game
 from neural import DualModeNeuralNetwork
-import json
-
+from sklearn.metrics import precision_score, recall_score, f1_score, roc_auc_score
 
 SRC = "data/zoo.csv"
 
@@ -16,11 +16,10 @@ num_qs = len(qs)
 num_ts = len(ts)
 input_size = len(qs)
 output_size = len(ts)
-question_limit = 8
 
 
 # Training Function
-def train(nn, training_size, question_limit=13):
+def train(nn, training_size, question_limit):
     i = 0
     interval = int(training_size / 100)
 
@@ -46,6 +45,8 @@ def validate(nn, num_games, question_limit):
 
     wins = 0
     testing_sets = []
+    all_predictions = []
+    all_targets = []
 
     for _ in range(num_games):
         t = random.randint(0, len(ts) - 1)
@@ -57,29 +58,36 @@ def validate(nn, num_games, question_limit):
         if win == 1:
             wins += 1
 
+        # Collect all targets and predictions
+        all_targets.append(target_vector)
+        output = nn.feed_forward_questions_to_targets(np.array(input_vector))
+        # Binarize the predictions with a threshold of 0.5
+        binary_output = (output >= 0.5).astype(int)
+        all_predictions.append(binary_output)
+
     accuracy = float(wins) / float(num_games)
     error = nn.calculate_total_error(testing_sets)
 
-    print("=======================================")
-    print(f"{accuracy * 100}% accuracy, error={error}")
-    print("=======================================\n")
+    # Convert lists to numpy arrays
+    all_targets = np.array(all_targets)
+    all_predictions = np.array(all_predictions)
+
+    # Calculate additional evaluation metrics
+    precision = precision_score(all_targets, all_predictions, average="micro")
+    recall = recall_score(all_targets, all_predictions, average="micro")
+    f1 = f1_score(all_targets, all_predictions, average="micro")
+    auc = roc_auc_score(all_targets, all_predictions, average="micro")
+
+    print('=======================================')
+    print(f'{accuracy * 100}% accuracy, error={error}')
+    print(f'Precision: {precision}, Recall: {recall}, F1 Score: {f1}, AUC: {auc}')
+    print('=======================================\n')
 
     return error, accuracy
 
 
-# Testing Function
-def test(nn):
-    game = Q20Game(nn, qs, ts, question_limit)
-    while True:
-        game.play()
-        nn.save("saved/zoo.json")
-
-
-def crossvalidate():
-    learning_rate = 0.1
-
-    hidden_size = 64  # Increased hidden layer size for more capacity
-
+# Cross Validation Function
+def crossvalidate(learning_rate, hidden_size, activation_func, question_limit):
     num_weights = int(hidden_size * input_size + output_size * hidden_size)
 
     nn = DualModeNeuralNetwork(
@@ -88,7 +96,7 @@ def crossvalidate():
         num_hidden2=hidden_size,
         num_targets=output_size,
         learning_rate=learning_rate,
-        activation_func="relu",
+        activation_func=activation_func,
     )
 
     print("\n=======================================")
@@ -108,12 +116,10 @@ def crossvalidate():
     print(f"upper epoch = {upper_epoch}")
     print(f"interval = {interval}")
     print(f"#validation sets = {validate_epoch}")
-    print(f"error breakpoint <= {validate_epoch / 13.3}")  # chaged to 13.3
+    print(f"error breakpoint <= {validate_epoch / 13.3}")  # changed to 13.3
 
     i = 0
-
     epoch = 0
-
     epoch_intervals = []
     epoch_errors = []
     epoch_accuracy = []
@@ -137,91 +143,58 @@ def crossvalidate():
 
         i += 1
 
-    nn.save("saved/zoo.json")
+    model_filename = f"saved/zoo_{question_limit}.json"
+    nn.save(model_filename)
     return nn
-
-
-def hyperparameter_training(lr, ls, question_limit, layer):
-    print("\n=======================================")
-    print("HYPERPARAMETER TRAINING")
-    print("Learning Rate:", lr)
-    print("Layer Size:", ls)
-    print("No. of Questions:", question_limit)
-    print("Activation Layer:", layer)
-    print("=======================================\n")
-
-    nn = DualModeNeuralNetwork(
-        num_questions=input_size,
-        num_hidden1=ls,
-        num_hidden2=ls,
-        num_targets=output_size,
-        learning_rate=lr,
-        activation_func=layer,
-    )
-
-    interval = 100000
-    validate_epoch = 100
-
-    train(nn, interval, question_limit)
-    error, accuracy = validate(nn, validate_epoch, question_limit)
-
-    if error < validate_epoch / 13.3:  # changed to 13.3
-        return accuracy, error
-
-    return accuracy, error
-
-
-def hyperparameter_tuning():
-    learning_rates = [0.1, 0.01, 0.001]
-    layer_sizes = [32, 64, 128]
-    question_limit_set = [20, 15, 10, 8]
-    activation_layers = ["sigmoid", "relu", "tanh", "softmax"]
-
-    hyperparameter_info = {}
-
-    for lr in learning_rates:
-        for ls in layer_sizes:
-            for no_of_question in question_limit_set:
-                for layer in activation_layers:
-
-                    accuracy, error = hyperparameter_training(
-                        lr, ls, no_of_question, layer
-                    )
-
-                    hyperparameter_info[lr] = {
-                        ls: {
-                            no_of_question: {
-                                layer: {"accuracy": accuracy, "error": error}
-                            }
-                        }
-                    }
-
-    print(hyperparameter_info)
-    with open("saved/hyperparameter_info.json", "w") as file:
-        json.dump(hyperparameter_info, file)
 
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         mode = sys.argv[1]
+
         if mode == "train":
+            if len(sys.argv) != 6:
+                print(
+                    "Usage: python main.py train <learning_rate> <hidden_size> <activation_func> <question_limit>"
+                )
+                sys.exit(1)
+
+            learning_rate = float(sys.argv[2])
+            hidden_size = int(sys.argv[3])
+            activation_func = sys.argv[4]
+            question_limit = int(sys.argv[5])
+
             # Perform training
-            nn = crossvalidate()
+            nn = crossvalidate(
+                learning_rate, hidden_size, activation_func, question_limit
+            )
+
         elif mode == "test":
-            # Perform testing
+            if len(sys.argv) != 3:
+                print("Usage: python main.py test <question_limit>")
+                sys.exit(1)
+
+            question_limit = int(sys.argv[2])
+
             nn = DualModeNeuralNetwork(
                 num_questions=input_size,
-                num_hidden1=64,
-                num_hidden2=64,
+                num_hidden1=128,
+                num_hidden2=128,
                 num_targets=output_size,
                 learning_rate=0.1,
                 activation_func="relu",
             )
-            nn.load("saved/zoo.json")
+            nn.load(f"saved/zoo_{question_limit}.json")
+
+            # Testing Function
+            def test(nn):
+                game = Q20Game(nn, qs, ts, question_limit)
+                while True:
+                    game.play()
+                    nn.save(f"saved/zoo_{question_limit}.json")
+
             test(nn)
-        elif mode == "hyperparameter":
-            # Perform hyperparameter tuning
-            hyperparameter_tuning()
+
         else:
             print("Invalid mode. Please specify 'train' or 'test'.")
     else:
