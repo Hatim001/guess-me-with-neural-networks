@@ -68,6 +68,7 @@ def initialize_game(
 
 # Streamlit App
 def main():
+    st.set_page_config(page_title="20 Questions Game", page_icon="🦁")
     st.title("20 Questions Game")
 
     if "game_started" not in st.session_state:
@@ -108,8 +109,6 @@ def show_intro():
     )
 
     question_limit = int(question_limit.split()[0])
-
-    print("Question Limit", question_limit, type(question_limit))
 
     if st.button("Start Game"):
         (
