@@ -105,7 +105,11 @@ def show_intro():
             "15 (Accuracy: 100%)",
             "20 (Accuracy: 100%)",
         ],
-        index=1,  # Default to 10 questions
+        index=(
+            1
+            if not "question_limit_index" in st.session_state
+            else st.session_state.question_limit_index
+        ),  # Default to 10 questions
     )
 
     question_limit = int(question_limit.split()[0])
@@ -126,6 +130,11 @@ def show_intro():
         st.session_state.game_completed = False
         st.session_state.correct_animal_selected = False
         st.session_state.game_started = True
+        st.session_state.question_limit_index = (
+            0
+            if question_limit == 8
+            else 1 if question_limit == 10 else 2 if question_limit == 15 else 3
+        )
         st.rerun()
 
 
